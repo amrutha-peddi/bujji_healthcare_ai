@@ -124,7 +124,3 @@ Always consult a certified doctor for accurate medical guidance.
 * Add **user authentication** and **medical history tracking**.
 
 ---
-
-
-Would you like me to also create a **minimal `requirements.txt`** file for this project (with Flask, transformers, pyttsx3, fpdf), so your README instructions run without errors?
-```
