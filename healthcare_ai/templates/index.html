@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bujji - Healthcare AI Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Bootstrap CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    .alert-high { background-color: #f8d7da; color: #842029; }
+    .alert-moderate { background-color: #fff3cd; color: #856404; }
+    .alert-mild { background-color: #cff4fc; color: #055160; }
+
+    .sidebar {
+      height: 100vh;
+      overflow-y: auto;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 300px;
+      background-color: #f0f0f0;
+      border-right: 1px solid #ddd;
+      padding: 1rem;
+    }
+
+    .main-content {
+      margin-left: 320px;
+    }
+
+    .symptom-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .chat-box {
+      background: #fff;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-top: 2rem;
+      border: 1px solid #ccc;
+    }
+
+    .chat-log {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    .chat-msg {
+      margin-bottom: 0.5rem;
+    }
+
+    .chat-msg.bot {
+      color: #0d6efd;
+    }
+
+    .chat-msg.user {
+      text-align: right;
+      color: #198754;
+    }
+
+    audio {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h4>🦠 Trained Symptoms</h4>
+    <div id="symptomList"></div>
+  </div>
+
+  <!-- Main -->
+  <div class="container main-content mt-5">
+    <div class="text-center mb-4">
+      <h1 class="text-primary">🤖 Bujji - Your Healthcare AI Assistant</h1>
+      <p class="lead">Enter your symptoms to get a possible diagnosis with advice and severity level.</p>
+    </div>
+
+    <form method="POST" action="/predict" class="card p-4 shadow-sm">
+      <div class="mb-3">
+        <label for="symptoms" class="form-label">Your Symptoms</label>
+        <input type="text" name="symptoms" class="form-control" placeholder="e.g. fever, cough, headache" required>
+      </div>
+      <button type="submit" class="btn btn-primary">🩺 Get Diagnosis</button>
+    </form>
+
+    {% if result %}
+    <div class="mt-4">
+      {% for item in result %}
+      {% set severity = item.severity.lower() %}
+      <div class="alert {% if severity == 'high' %}alert-high{% elif severity == 'moderate' %}alert-moderate{% else %}alert-mild{% endif %} border rounded-3 p-3 mb-3">
+        <h5><strong>Symptom:</strong> {{ item.symptom | capitalize }}</h5>
+        <p><strong>Diagnosis:</strong> {{ item.diagnosis }}</p>
+        <p><strong>Advice:</strong> {{ item.advice }}</p>
+        <p><strong>Severity:</strong>
+          <span class="badge {% if severity == 'high' %}bg-danger{% elif severity == 'moderate' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">{{ item.severity }}</span>
+        </p>
+      </div>
+      {% endfor %}
+
+      <!-- Summary Section -->
+      {% if summary %}
+      <div class="mt-4 card p-3">
+        <h4>📋 Summary</h4>
+        <p>{{ summary }}</p>
+
+        <!-- Audio playback -->
+        <audio controls src="/static/summary.mp3" class="mt-2"></audio>
+
+        <!-- PDF download button -->
+        <button class="btn btn-outline-secondary mt-3" onclick="downloadPDF()">⬇️ Download PDF</button>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Chatbot Section -->
+    <div class="chat-box mt-5">
+      <h4>💬 Ask Bujji</h4>
+      <div id="chatLog" class="chat-log"></div>
+      <div class="input-group">
+        <input type="text" id="chatInput" class="form-control" placeholder="Ask about symptoms...">
+        <button class="btn btn-success" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar JS -->
+  <script>
+    const symptoms = {{ symptom_keys | tojson }};
+    const listDiv = document.getElementById('symptomList');
+
+    symptoms.forEach(symptom => {
+      const item = document.createElement('div');
+      item.className = 'symptom-item';
+      item.innerHTML = `
+        <span>${symptom.charAt(0).toUpperCase() + symptom.slice(1)}</span>
+        <button class="btn btn-outline-primary btn-sm" onclick="searchWiki('${symptom}')">🔍</button>
+      `;
+      listDiv.appendChild(item);
+    });
+
+    function searchWiki(query) {
+      const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(query)}`;
+      window.open(url, '_blank');
+    }
+
+    function downloadPDF() {
+      fetch('/download_pdf', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          diagnosis: `{{ result | map(attribute='diagnosis') | join(', ') }}`,
+          summary: `{{ summary }}`
+        })
+      })
+      .then(response => response.blob())
+      .then(blob => {
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = 'diagnosis_summary.pdf';
+        link.click();
+      });
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const chatLog = document.getElementById('chatLog');
+      const userMsg = input.value;
+
+      if (!userMsg) return;
+
+      const userDiv = document.createElement('div');
+      userDiv.className = 'chat-msg user';
+      userDiv.innerText = "You: " + userMsg;
+      chatLog.appendChild(userDiv);
+
+      fetch('/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: userMsg})
+      })
+      .then(res => res.json())
+      .then(data => {
+        const botDiv = document.createElement('div');
+        botDiv.className = 'chat-msg bot';
+        botDiv.innerText = "Bujji: " + data.response;
+        chatLog.appendChild(botDiv);
+        chatLog.scrollTop = chatLog.scrollHeight;
+      });
+
+      input.value = '';
+    }
+  </script>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
